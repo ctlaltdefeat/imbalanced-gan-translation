@@ -1,0 +1,9 @@
+*.npy
+*.pt
+*.pyc
+logs/
+adult*
+*.pkl
+*.npz
+.vscode/
+lightning_logs/
