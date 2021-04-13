@@ -12,16 +12,13 @@ from torch.utils.data.dataset import TensorDataset
 
 from models import WGANGP
 
-# TODO: imbalance manually or using a sampler?
-
 if __name__ == "__main__":
     x, y, x_maj, y_maj, x_min, y_min = torch.load("ds.pt")
-    print(x_min.shape)
     ds = TensorDataset(x_min.float())
     # train_ds = torch.utils.data.Subset(ds, list(range(len(ds) - 800)))
     # test_ds = torch.utils.data.Subset(
     #     ds, list(range(len(ds) - 800, len(ds)))
     # )
-    model = WGANGP(latent_dim=2, output_dim=2, lr=1e-4)
+    model = WGANGP(latent_dim=21, output_dim=21, lr=1e-4)
     trainer = Trainer(gpus=1, max_epochs=10000)
     trainer.fit(model, DataLoader(ds, batch_size=1024))

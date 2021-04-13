@@ -42,10 +42,10 @@ class Generator(nn.Module):
             return layers
 
         self.model = nn.Sequential(
-            *block(latent_dim, 24, normalize=False),
-            *block(24, 48),
-            *block(48, 64),
-            nn.Linear(64, int(output_dim)),
+            *block(latent_dim, 64, normalize=False),
+            *block(64, 128),
+            *block(128, 256),
+            nn.Linear(256, int(output_dim)),
             # nn.Tanh()
         )
 
@@ -60,11 +60,11 @@ class Discriminator(nn.Module):
         super().__init__()
 
         self.model = nn.Sequential(
-            nn.Linear(int(output_dim), 24),
+            nn.Linear(int(output_dim), 128),
             SELU(),
-            nn.Linear(24, 12),
+            nn.Linear(128, 64),
             SELU(),
-            nn.Linear(12, 1),
+            nn.Linear(64, 1),
             nn.Sigmoid(),
         )
 
@@ -201,8 +201,8 @@ class WGANGP(LightningModule):
         imgs = batch[0]
 
         # sample noise
-        # z = torch.randn(imgs.shape[0], self.latent_dim)
-        z = (torch.rand(imgs.shape[0], self.latent_dim)-0.5)*2*3
+        z = torch.randn(imgs.shape[0], self.latent_dim)
+        # z = (torch.rand(imgs.shape[0], self.latent_dim)-0.5)*2*3
         z = z.type_as(imgs)
 
         # train generator
@@ -217,7 +217,7 @@ class WGANGP(LightningModule):
             valid = valid.type_as(imgs)
 
             # adversarial loss is binary cross-entropy
-            g_loss = self.adversarial_loss(self.discriminator(self(z)), valid) + 0.01 * nn.L1Loss()(z, self.generated_imgs)
+            g_loss = self.adversarial_loss(self.discriminator(self(z)), valid)  + 0.1 * nn.L1Loss()(z, self.generated_imgs)
             tqdm_dict = {"g_loss": g_loss}
             output = OrderedDict(
                 {"loss": g_loss, "progress_bar": tqdm_dict, "log": tqdm_dict}
