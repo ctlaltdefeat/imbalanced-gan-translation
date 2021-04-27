@@ -13,7 +13,7 @@ from torch.utils.data.dataset import TensorDataset
 from models import WGANGP
 
 if __name__ == "__main__":
-    x, y, x_maj, y_maj, x_min, y_min = torch.load("ds.pt")
+    x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_train.pt")
     ds = TensorDataset(x_min.float())
     # train_ds = torch.utils.data.Subset(ds, list(range(len(ds) - 800)))
     # test_ds = torch.utils.data.Subset(
