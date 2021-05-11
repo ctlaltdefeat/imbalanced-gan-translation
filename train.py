@@ -15,12 +15,17 @@ from models import WGANGP
 
 if __name__ == "__main__":
     seed_everything(123, workers=True)
-    x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_train.pt")
+    x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
     ds = TensorDataset(x_min.float())
     # train_ds = torch.utils.data.Subset(ds, list(range(len(ds) - 800)))
     # test_ds = torch.utils.data.Subset(
     #     ds, list(range(len(ds) - 800, len(ds)))
     # )
-    model = WGANGP(latent_dim=21, output_dim=21, lr=1e-4)
+    model = WGANGP(
+        latent_dim=21,
+        output_dim=21,
+        lr=1e-4,
+        x_maj=x_maj
+    )
     trainer = Trainer(gpus=1, max_epochs=20000)
-    trainer.fit(model, DataLoader(ds, batch_size=1024))
+    trainer.fit(model, DataLoader(ds, batch_size=10024))
