@@ -3,6 +3,8 @@ import numpy as np
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 import torch
 from sklearn.datasets import make_blobs, make_moons
+from pytorch_lightning import seed_everything
+seed_everything(123, workers=True)
 
 X, y = make_moons(n_samples=1000, random_state=0, noise=0.1)
 X1 = X[y == 0]

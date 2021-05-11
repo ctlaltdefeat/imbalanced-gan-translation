@@ -7,3 +7,4 @@ adult*
 *.npz
 .vscode/
 lightning_logs/
+saved_experiments/
