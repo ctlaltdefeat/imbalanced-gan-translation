@@ -135,6 +135,7 @@ if __name__ == "__main__":
     seed_everything(123, workers=True)
     neigh = KNeighborsClassifier(n_neighbors=11)
     x_train, y_train, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
+    neigh.fit(x_train, y_train)
     x_test, y_test, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_test.pt")
     x_test, y_test = x_test.numpy(), y_test.numpy()
     model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_imbalanced_distance_loss\checkpoints\epoch=19999-step=19999.ckpt", strict=False)
@@ -147,7 +148,7 @@ if __name__ == "__main__":
     
     # Adjust the number of points generated
     x_gen = x_gen[:x_maj.shape[0]]
-    
+
     print(x_gen.shape)
     x_all = torch.cat([x_train, x_gen])
     # reduced = reducer.fit_transform(x_all)
