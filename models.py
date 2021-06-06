@@ -100,8 +100,6 @@ class WGANGP(LightningModule):
         )
         self.discriminator = Discriminator(output_dim=self.output_dim)
 
-        self.validation_z = torch.randn(8, self.latent_dim)
-
         self.example_input_array = torch.zeros(2, self.latent_dim)
 
         if 'x_maj' in kwargs and kwargs['x_maj'] is not None:

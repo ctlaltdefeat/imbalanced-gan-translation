@@ -22,8 +22,8 @@ if __name__ == "__main__":
     #     ds, list(range(len(ds) - 800, len(ds)))
     # )
     model = WGANGP(
-        latent_dim=10,
-        output_dim=10,
+        latent_dim=x.shape[1],
+        output_dim=x.shape[1],
         lr=1e-4,
         x_maj=x_maj
     )

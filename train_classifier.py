@@ -1,3 +1,5 @@
+from models import WGANGP
+from catboost.core import CatBoostClassifier
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -26,149 +28,190 @@ from torch.utils.tensorboard import SummaryWriter
 from sklearn.neighbors import KNeighborsClassifier
 
 
-class BalanceClassSampler(Sampler):
-    """Allows you to create stratified sample on unbalanced classes.
-    Args:
-        labels: list of class label for each elem in the dataset
-        mode: Strategy to balance classes.
-            Must be one of [downsampling, upsampling]
-    """
+# class BalanceClassSampler(Sampler):
+#     """Allows you to create stratified sample on unbalanced classes.
+#     Args:
+#         labels: list of class label for each elem in the dataset
+#         mode: Strategy to balance classes.
+#             Must be one of [downsampling, upsampling]
+#     """
 
-    def __init__(
-        self, labels: List[int], mode: Union[str, int] = "downsampling"
-    ):
-        """Sampler initialisation."""
-        super().__init__(labels)
+#     def __init__(
+#         self, labels: List[int], mode: Union[str, int] = "downsampling"
+#     ):
+#         """Sampler initialisation."""
+#         super().__init__(labels)
 
-        labels = np.array(labels)
-        samples_per_class = {
-            label: (labels == label).sum() for label in set(labels)
-        }
+#         labels = np.array(labels)
+#         samples_per_class = {
+#             label: (labels == label).sum() for label in set(labels)
+#         }
 
-        self.lbl2idx = {
-            label: np.arange(len(labels))[labels == label].tolist()
-            for label in set(labels)
-        }
+#         self.lbl2idx = {
+#             label: np.arange(len(labels))[labels == label].tolist()
+#             for label in set(labels)
+#         }
 
-        if isinstance(mode, str):
-            assert mode in ["downsampling", "upsampling"]
+#         if isinstance(mode, str):
+#             assert mode in ["downsampling", "upsampling"]
 
-        if isinstance(mode, int) or mode == "upsampling":
-            samples_per_class = (
-                mode
-                if isinstance(mode, int)
-                else max(samples_per_class.values())
-            )
-        else:
-            samples_per_class = min(samples_per_class.values())
+#         if isinstance(mode, int) or mode == "upsampling":
+#             samples_per_class = (
+#                 mode
+#                 if isinstance(mode, int)
+#                 else max(samples_per_class.values())
+#             )
+#         else:
+#             samples_per_class = min(samples_per_class.values())
 
-        self.labels = labels
-        self.samples_per_class = samples_per_class
-        self.length = self.samples_per_class * len(set(labels))
+#         self.labels = labels
+#         self.samples_per_class = samples_per_class
+#         self.length = self.samples_per_class * len(set(labels))
 
-    def __iter__(self) -> Iterator[int]:
-        """
-        Yields:
-            indices of stratified sample
-        """
-        indices = []
-        for key in sorted(self.lbl2idx):
-            replace_flag = self.samples_per_class > len(self.lbl2idx[key])
-            indices += np.random.choice(
-                self.lbl2idx[key], self.samples_per_class, replace=replace_flag
-            ).tolist()
-        assert len(indices) == self.length
-        np.random.shuffle(indices)
+#     def __iter__(self) -> Iterator[int]:
+#         """
+#         Yields:
+#             indices of stratified sample
+#         """
+#         indices = []
+#         for key in sorted(self.lbl2idx):
+#             replace_flag = self.samples_per_class > len(self.lbl2idx[key])
+#             indices += np.random.choice(
+#                 self.lbl2idx[key], self.samples_per_class, replace=replace_flag
+#             ).tolist()
+#         assert len(indices) == self.length
+#         np.random.shuffle(indices)
 
-        return iter(indices)
+#         return iter(indices)
 
-    def __len__(self) -> int:
-        """
-        Returns:
-             length of result sample
-        """
-        return self.length
+#     def __len__(self) -> int:
+#         """
+#         Returns:
+#              length of result sample
+#         """
+#         return self.length
 
 
-class Classifier(LightningModule):
-    def __init__(self, output_dim):
-        super().__init__()
-        self.save_hyperparameters()
-        self.output_dim = output_dim
-        self.classifier = nn.Sequential(
-            nn.Linear(int(self.output_dim), 128),
-            SELU(),
-            Dropout(),
-            nn.Linear(128, 64),
-            SELU(),
-            Dropout(),
-            nn.Linear(64, 1),
-            # nn.Sigmoid(),
-        )
-        # self.loss = nn.BCELoss()
-        self.loss = nn.BCEWithLogitsLoss()
-        self.val_metric = torchmetrics.AveragePrecision()
+# class Classifier(LightningModule):
+#     def __init__(self, output_dim):
+#         super().__init__()
+#         self.save_hyperparameters()
+#         self.output_dim = output_dim
+#         self.classifier = nn.Sequential(
+#             nn.Linear(int(self.output_dim), 128),
+#             SELU(),
+#             Dropout(),
+#             nn.Linear(128, 64),
+#             SELU(),
+#             Dropout(),
+#             nn.Linear(64, 1),
+#             # nn.Sigmoid(),
+#         )
+#         # self.loss = nn.BCELoss()
+#         self.loss = nn.BCEWithLogitsLoss()
+#         self.val_metric = torchmetrics.AveragePrecision()
 
-    def forward(self, x):
-        return self.classifier(x)
+#     def forward(self, x):
+#         return self.classifier(x)
 
-    def configure_optimizers(self):
-        return torch.optim.Adam(
-            self.classifier.parameters(), lr=2e-5, #weight_decay=1e-6
-        )
+#     def configure_optimizers(self):
+#         return torch.optim.Adam(
+#             self.classifier.parameters(), lr=2e-5, #weight_decay=1e-6
+#         )
 
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        return self.loss(self(x), y.unsqueeze(-1))
+#     def training_step(self, batch, batch_idx):
+#         x, y = batch
+#         return self.loss(self(x), y.unsqueeze(-1))
 
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        self.log(
-            "val/loss",
-            self.val_metric(self.classifier(x), y.unsqueeze(-1).float()),
-        )
+#     def validation_step(self, batch, batch_idx):
+#         x, y = batch
+#         self.log(
+#             "val/loss",
+#             self.val_metric(self.classifier(x), y.unsqueeze(-1).float()),
+#         )
 
 
 if __name__ == "__main__":
     seed_everything(123, workers=True)
     neigh = KNeighborsClassifier(n_neighbors=11)
-    x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
-    neigh.fit(x, y)
-    x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_train.pt")
-    ds_train = TensorDataset(x.float(), y.float())
-    x, y, _, _, _, _ = torch.load("ds_imba_test.pt")
-    ds_eval = TensorDataset(x.float(), y.float())
-    # c = Classifier(21)
-    c = Classifier.load_from_checkpoint(
-        r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\last.ckpt",
-        output_dim=21,
+    x_train, y_train, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
+    x_test, y_test, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_test.pt")
+    x_test, y_test = x_test.numpy(), y_test.numpy()
+    model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_imbalanced_distance_loss\checkpoints\epoch=19999-step=19999.ckpt", strict=False)
+    # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach().numpy()
+    x_gen = model(x_maj.float()).detach()
+    neigh_res = neigh.predict(x_gen)
+    # x_gen = x_gen[neigh_res==1]
+    x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    print(x_gen.shape)
+    
+    # Adjust the number of points generated
+    x_gen = x_gen[:x_maj.shape[0]]
+    
+    print(x_gen.shape)
+    x_all = torch.cat([x_train, x_gen])
+    # reduced = reducer.fit_transform(x_all)
+    y_all = torch.cat([y_train, torch.ones(len(x_gen))])
+    # plt.scatter(reduced[:, 0],reduced[:, 1], c=y_all)
+    # plt.show()
+
+    x_all, y_all = x_all.numpy(), y_all.numpy()
+
+    cb = CatBoostClassifier(
+        custom_loss=['AUC'],
+        random_seed=123,
+        early_stopping_rounds=200,
+        # scale_pos_weight=10,
+        # learning_rate=0.002,
+        depth=6,
+        iterations=5000,
+        # logging_level='Silent'
     )
-    trainer = Trainer(
-        gpus=1,
-        max_epochs=20000,
-        checkpoint_callback=False,
-        precision=16,
-        callbacks=[
-            EarlyStopping(monitor="val/loss", patience=1000, mode="max")
-        ],
+    cb.fit(
+        x_all, y_all,
+        # cat_features=categorical_features_indices,
+        eval_set=(x_test, y_test),
+    #     logging_level='Verbose',  # you can uncomment this for text output
+        # plot=True
     )
-    trainer.fit(
-        c,
-        DataLoader(
-            ds_train,
-            batch_size=40024,
-            sampler=BalanceClassSampler(y.tolist(), mode="downsampling"),
-        ),
-        DataLoader(ds_eval, batch_size=40000),
-    )
-    c.eval()
-    trainer.save_checkpoint(
-        "saved_experiments/potential_test_imbalanced_4/last.ckpt"
-    )
-    exp = SummaryWriter("saved_experiments/potential_test_imbalanced_4")
-    exp.add_pr_curve(
-        "baseline",
-        y.unsqueeze(-1).int(),
-        torch.sigmoid(c(x.float())),
-        num_thresholds=511,
-    )
+
+    # x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
+    # neigh.fit(x, y)
+    # x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_train.pt")
+    # ds_train = TensorDataset(x.float(), y.float())
+    # x, y, _, _, _, _ = torch.load("ds_imba_test.pt")
+    # ds_eval = TensorDataset(x.float(), y.float())
+    # # c = Classifier(21)
+    # c = Classifier.load_from_checkpoint(
+    #     r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\last.ckpt",
+    #     output_dim=21,
+    # )
+    # trainer = Trainer(
+    #     gpus=1,
+    #     max_epochs=20000,
+    #     checkpoint_callback=False,
+    #     precision=16,
+    #     callbacks=[
+    #         EarlyStopping(monitor="val/loss", patience=1000, mode="max")
+    #     ],
+    # )
+    # trainer.fit(
+    #     c,
+    #     DataLoader(
+    #         ds_train,
+    #         batch_size=40024,
+    #         sampler=BalanceClassSampler(y.tolist(), mode="downsampling"),
+    #     ),
+    #     DataLoader(ds_eval, batch_size=40000),
+    # )
+    # c.eval()
+    # trainer.save_checkpoint(
+    #     "saved_experiments/potential_test_imbalanced_4/last.ckpt"
+    # )
+    # exp = SummaryWriter("saved_experiments/potential_test_imbalanced_4")
+    # exp.add_pr_curve(
+    #     "baseline",
+    #     y.unsqueeze(-1).int(),
+    #     torch.sigmoid(c(x.float())),
+    #     num_thresholds=511,
+    # )
