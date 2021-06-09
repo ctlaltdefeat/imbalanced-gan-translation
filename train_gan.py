@@ -27,5 +27,5 @@ if __name__ == "__main__":
         lr=1e-4,
         x_maj=x_maj
     )
-    trainer = Trainer(gpus=1, max_epochs=20000)
+    trainer = Trainer(gpus=1, max_epochs=5000)
     trainer.fit(model, DataLoader(ds, batch_size=100024))

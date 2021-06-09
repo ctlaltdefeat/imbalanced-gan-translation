@@ -10,9 +10,10 @@ df = pd.read_csv(
 print(df["class"].value_counts())
 df = df.sample(frac=1, random_state=123).reset_index(drop=True)
 num_samples = df.shape[0]
-X_all = StandardScaler(with_std=True).fit_transform(
-    df[[c for c in df.columns if c != "class"]]
-)
+X_all = df[[c for c in df.columns if c != "class"]].to_numpy()
+# X_all = StandardScaler(with_std=True).fit_transform(
+#     df[[c for c in df.columns if c != "class"]]
+# )
 y_all = df["class"]
 X = X_all[: int(0.8 * num_samples)]
 y = y_all[: int(0.8 * num_samples)]

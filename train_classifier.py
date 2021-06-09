@@ -26,6 +26,7 @@ import torchmetrics
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import average_precision_score
 
 
 # class BalanceClassSampler(Sampler):
@@ -133,37 +134,37 @@ from sklearn.neighbors import KNeighborsClassifier
 
 if __name__ == "__main__":
     seed_everything(123, workers=True)
-    neigh = KNeighborsClassifier(n_neighbors=11, n_jobs=3)
+    neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
     x_train, y_train, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
-    # neigh.fit(x_train, y_train)
+    neigh.fit(x_train, y_train)
     print("trained nn")
-    x_test, y_test, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_test.pt")
+    x_test, y_test, _, _, _, _ = torch.load("ds_imba_test.pt")
     x_test, y_test = x_test.numpy(), y_test.numpy()
-    # model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_distance_loss_majority_sampling_census\checkpoints\epoch=19999-step=19999.ckpt", strict=False).cuda()
+    model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_distance_loss_majority_sampling_census\checkpoints\epoch=4999-step=4999.ckpt", strict=False)
     # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach().numpy()
-    # x_gen = model(x_maj.float().cuda()).cpu().detach()
+    x_gen = model(x_maj.float()).cpu().detach()
     print("generated synthetic points")
     # x_gen = x_gen[neigh_res==1]
-    # x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
     print("predicted nn on synthetic points")
     # print(x_gen.shape)
     
     # Adjust the number of points generated
-    # x_gen = x_gen[:x_maj.shape[0]]
+    x_gen = x_gen[:4*x_min.shape[0]]
 
     # print(x_gen.shape)
-    x_all = x_train
-    # x_all = torch.cat([x_train, x_gen])
+    # x_all = x_train
+    x_all = torch.cat([x_train, x_gen])
     # reduced = reducer.fit_transform(x_all)
-    y_all = y_train
-    # y_all = torch.cat([y_train, torch.ones(len(x_gen))])
+    # y_all = y_train
+    y_all = torch.cat([y_train, torch.ones(len(x_gen))])
     # plt.scatter(reduced[:, 0],reduced[:, 1], c=y_all)
     # plt.show()
 
     x_all, y_all = x_all.numpy(), y_all.numpy()
 
     cb = CatBoostClassifier(
-        custom_loss=['AUC'],
+        custom_loss=['F1'],
         random_seed=123,
         early_stopping_rounds=200,
         # scale_pos_weight=10,
@@ -179,6 +180,8 @@ if __name__ == "__main__":
     #     logging_level='Verbose',  # you can uncomment this for text output
         # plot=True
     ))
+
+    print(average_precision_score(y_test, cb.predict_proba(x_test)[:, 1]))
 
     # x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
     # neigh.fit(x, y)

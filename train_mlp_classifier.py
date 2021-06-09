@@ -100,10 +100,10 @@ class Classifier(LightningModule):
         self.classifier = nn.Sequential(
             nn.Linear(int(self.output_dim), 128),
             SELU(),
-            Dropout(),
+            Dropout(0.1),
             nn.Linear(128, 64),
             SELU(),
-            Dropout(),
+            Dropout(0.1),
             nn.Linear(64, 1),
             # nn.Sigmoid(),
         )
@@ -116,7 +116,7 @@ class Classifier(LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.Adam(
-            self.classifier.parameters(), lr=2e-5, #weight_decay=1e-6
+            self.classifier.parameters(), lr=2e-4, #weight_decay=1e-6
         )
 
     def training_step(self, batch, batch_idx):
@@ -133,50 +133,35 @@ class Classifier(LightningModule):
 
 if __name__ == "__main__":
     seed_everything(123, workers=True)
-    neigh = KNeighborsClassifier(n_neighbors=11, n_jobs=3)
+    neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
     x_train, y_train, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
-    # neigh.fit(x_train, y_train)
+    neigh.fit(x_train, y_train)
     print("trained nn")
-    x_test, y_test, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_test.pt")
-    x_test, y_test = x_test.numpy(), y_test.numpy()
-    # model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_distance_loss_majority_sampling_census\checkpoints\epoch=19999-step=19999.ckpt", strict=False).cuda()
+    x_test, y_test, _, _, _, _ = torch.load("ds_imba_test.pt")
+    model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_distance_loss_majority_sampling_census\checkpoints\epoch=4999-step=4999.ckpt", strict=False).cuda()
     # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach().numpy()
-    # x_gen = model(x_maj.float().cuda()).cpu().detach()
+    x_gen = model(x_maj.float().cuda()).cpu().detach()
     print("generated synthetic points")
     # x_gen = x_gen[neigh_res==1]
-    # x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
     print("predicted nn on synthetic points")
     # print(x_gen.shape)
     
     # Adjust the number of points generated
-    # x_gen = x_gen[:x_maj.shape[0]]
+    x_gen = x_gen[:10*x_min.shape[0]]
 
     # print(x_gen.shape)
-    x_all = x_train
-    # x_all = torch.cat([x_train, x_gen])
+    # x_all = x_train
+    x_all = torch.cat([x_train, x_min, x_min, x_min, x_gen])
     # reduced = reducer.fit_transform(x_all)
-    y_all = y_train
-    # y_all = torch.cat([y_train, torch.ones(len(x_gen))])
+    # y_all = y_train
+    y_all = torch.cat([y_train, y_min, y_min, y_min, torch.ones(len(x_gen))])
     # plt.scatter(reduced[:, 0],reduced[:, 1], c=y_all)
     # plt.show()
 
-    x_all, y_all = x_all.numpy(), y_all.numpy()
-
-    # print(cb.fit(
-    #     x_all, y_all,
-    #     # cat_features=categorical_features_indices,
-    #     eval_set=(x_test, y_test),
-    # #     logging_level='Verbose',  # you can uncomment this for text output
-    #     # plot=True
-    # ))
-
-    # x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
-    # neigh.fit(x, y)
-    x, y, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
-    ds_train = TensorDataset(x.float(), y.float())
-    x_test, y_test, _, _, _, _ = torch.load("ds_imba_test.pt")
+    ds_train = TensorDataset(x_all.float(), y_all.float())
     ds_eval = TensorDataset(x_test.float(), y_test.float())
-    c = Classifier(x.shape[1])
+    c = Classifier(x_all.shape[1])
     # c = Classifier.load_from_checkpoint(
     #     r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\last.ckpt",
     #     output_dim=21,
@@ -187,23 +172,23 @@ if __name__ == "__main__":
         checkpoint_callback=False,
         precision=16,
         callbacks=[
-            EarlyStopping(monitor="val/loss", patience=1000, mode="max")
+            EarlyStopping(monitor="val/loss", patience=50, mode="max")
         ],
     )
     trainer.fit(
         c,
         DataLoader(
             ds_train,
-            batch_size=4000024,
-            sampler=BalanceClassSampler(y.tolist(), mode="upsampling"),
+            batch_size=40024,
+            sampler=BalanceClassSampler(y_all.tolist(), mode="upsampling"),
         ),
         DataLoader(ds_eval, batch_size=400000),
     )
     c.eval()
     trainer.save_checkpoint(
-        "saved_experiments/upsampling/last.ckpt"
+        "saved_experiments/gan_translation_majority_sampling_nn_rejection_keep_many/census.ckpt"
     )
-    exp = SummaryWriter("saved_experiments/upsampling")
+    exp = SummaryWriter("saved_experiments/gan_translation_majority_sampling_nn_rejection_keep_many")
     exp.add_pr_curve(
         "census",
         y_test.unsqueeze(-1).int(),
