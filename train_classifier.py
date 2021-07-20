@@ -27,6 +27,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import average_precision_score
+from sklearn.model_selection import train_test_split
 
 
 # class BalanceClassSampler(Sampler):
@@ -134,23 +135,27 @@ from sklearn.metrics import average_precision_score
 
 if __name__ == "__main__":
     seed_everything(123, workers=True)
-    neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
-    x_train, y_train, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
-    neigh.fit(x_train, y_train)
+    # neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
+    x_train, y_train, x_maj, y_maj, x_min, y_min = torch.load("ds_train.pt")
+    print("Number of positive test samples: {}".format(y_min.shape[0]/4))
+    # neigh.fit(x_train, y_train)
     print("trained nn")
-    x_test, y_test, _, _, _, _ = torch.load("ds_imba_test.pt")
+    x_test, y_test, _, _, _, _ = torch.load("ds_test.pt")
     x_test, y_test = x_test.numpy(), y_test.numpy()
-    model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_distance_loss_majority_sampling_census\checkpoints\epoch=4999-step=4999.ckpt", strict=False)
+    model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_distance_loss_majority_sampling_census\checkpoints\epoch=4999-step=4999.ckpt", strict=False).cuda()
     # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach().numpy()
-    x_gen = model(x_maj.float()).cpu().detach()
+    # x_gen = model(torch.randn(10*x_min.shape[0], x_min.shape[1]).cuda()).cpu().detach()
+    x_gen = model(x_maj.float().cuda()).cpu().detach()
     print("generated synthetic points")
     # x_gen = x_gen[neigh_res==1]
-    x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    # x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    # torch.save(x_gen, 'x_gen.pt')
+    # x_gen = torch.load('x_gen.pt')
     print("predicted nn on synthetic points")
     # print(x_gen.shape)
     
     # Adjust the number of points generated
-    x_gen = x_gen[:4*x_min.shape[0]]
+    x_gen = x_gen[:int(0*x_min.shape[0])]
 
     # print(x_gen.shape)
     # x_all = x_train
@@ -164,19 +169,19 @@ if __name__ == "__main__":
     x_all, y_all = x_all.numpy(), y_all.numpy()
 
     cb = CatBoostClassifier(
-        custom_loss=['F1'],
+        # custom_loss=['F1'],
         random_seed=123,
         early_stopping_rounds=200,
         # scale_pos_weight=10,
-        # learning_rate=0.002,
+        learning_rate=0.1,
         depth=6,
-        iterations=5000,
+        iterations=500,
         # logging_level='Silent'
     )
     print(cb.fit(
         x_all, y_all,
         # cat_features=categorical_features_indices,
-        eval_set=(x_test, y_test),
+        # eval_set=(x_test, y_test),
     #     logging_level='Verbose',  # you can uncomment this for text output
         # plot=True
     ))

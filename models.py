@@ -83,6 +83,7 @@ class WGANGP(LightningModule):
         lr: float = 0.0002,
         b1: float = 0.5,
         b2: float = 0.999,
+        vanilla=True,
         **kwargs
     ):
         super().__init__()
@@ -93,6 +94,7 @@ class WGANGP(LightningModule):
         self.lr = lr
         self.b1 = b1
         self.b2 = b2
+        self.vanilla = vanilla
 
         # networks
         self.generator = Generator(
@@ -204,7 +206,10 @@ class WGANGP(LightningModule):
         # sample noise
         # z = torch.randn(imgs.shape[0], self.latent_dim)
         # z = (torch.rand(imgs.shape[0], self.latent_dim)-0.5)*2*3
-        z = self.x_maj[torch.randint(len(self.x_maj), (imgs.shape[0],))]
+        if self.vanilla:
+            z = torch.randn(imgs.shape[0], self.latent_dim)
+        else:
+            z = self.x_maj[torch.randint(len(self.x_maj), (imgs.shape[0],))]
         z = z.type_as(imgs)
 
         # train generator
@@ -219,7 +224,10 @@ class WGANGP(LightningModule):
             valid = valid.type_as(imgs)
 
             # adversarial loss is binary cross-entropy
-            g_loss = self.adversarial_loss(self.discriminator(self(z)), valid) + 0.1 * nn.L1Loss()(z, self.generated_imgs)
+            if self.vanilla:
+                g_loss = self.adversarial_loss(self.discriminator(self(z)), valid)
+            else:
+                g_loss = self.adversarial_loss(self.discriminator(self(z)), valid) + 0.1 * nn.L1Loss()(z, self.generated_imgs)
             tqdm_dict = {"g_loss": g_loss}
             output = OrderedDict(
                 {"loss": g_loss, "progress_bar": tqdm_dict, "log": tqdm_dict}

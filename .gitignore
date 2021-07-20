@@ -10,3 +10,4 @@ lightning_logs/
 saved_experiments/
 catboost_info/
 *.csv
+datasets*/

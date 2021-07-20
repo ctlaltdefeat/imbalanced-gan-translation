@@ -133,29 +133,32 @@ class Classifier(LightningModule):
 
 if __name__ == "__main__":
     seed_everything(123, workers=True)
-    neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
-    x_train, y_train, x_maj, y_maj, x_min, y_min = torch.load("ds_imba_train.pt")
-    neigh.fit(x_train, y_train)
+    # neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
+    x_train, y_train, x_maj, y_maj, x_min, y_min = torch.load("ds_train.pt")
+    # neigh.fit(x_train, y_train)
     print("trained nn")
-    x_test, y_test, _, _, _, _ = torch.load("ds_imba_test.pt")
-    model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_distance_loss_majority_sampling_census\checkpoints\epoch=4999-step=4999.ckpt", strict=False).cuda()
-    # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach().numpy()
-    x_gen = model(x_maj.float().cuda()).cpu().detach()
+    x_test, y_test, _, _, _, _ = torch.load("ds_test.pt")
+    model = WGANGP.load_from_checkpoint(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\lightning_logs\GAN_balanced_vanilla_celeba\checkpoints\epoch=4999-step=4999.ckpt", strict=False).cuda()
+    # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach()
+    x_gen = model(torch.randn(5*x_min.shape[0], x_min.shape[1]).cuda()).cpu().detach()
+    # x_gen = model(x_maj.float().cuda()).cpu().detach()
     print("generated synthetic points")
     # x_gen = x_gen[neigh_res==1]
-    x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    # x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    # torch.save(x_gen, 'x_gen.pt')
     print("predicted nn on synthetic points")
     # print(x_gen.shape)
     
+    # x_gen = torch.load('x_gen.pt')
     # Adjust the number of points generated
-    x_gen = x_gen[:10*x_min.shape[0]]
+    x_gen = x_gen[:5*x_min.shape[0]]
 
     # print(x_gen.shape)
     # x_all = x_train
-    x_all = torch.cat([x_train, x_min, x_min, x_min, x_gen])
+    x_all = torch.cat([x_train]+ 4*[x_min]+[x_gen])
     # reduced = reducer.fit_transform(x_all)
     # y_all = y_train
-    y_all = torch.cat([y_train, y_min, y_min, y_min, torch.ones(len(x_gen))])
+    y_all = torch.cat([y_train]+ 4*[y_min]+[torch.ones(len(x_gen))])
     # plt.scatter(reduced[:, 0],reduced[:, 1], c=y_all)
     # plt.show()
 
@@ -186,11 +189,11 @@ if __name__ == "__main__":
     )
     c.eval()
     trainer.save_checkpoint(
-        "saved_experiments/gan_translation_majority_sampling_nn_rejection_keep_many/census.ckpt"
+        "saved_experiments/gan_vanilla_keep_5_4/celeba_balanced.ckpt"
     )
-    exp = SummaryWriter("saved_experiments/gan_translation_majority_sampling_nn_rejection_keep_many")
+    exp = SummaryWriter("saved_experiments/gan_vanilla_keep_5_4")
     exp.add_pr_curve(
-        "census",
+        "celeba_balanced",
         y_test.unsqueeze(-1).int(),
         torch.sigmoid(c(x_test.float())),
         num_thresholds=511,
