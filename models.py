@@ -84,6 +84,7 @@ class WGANGP(LightningModule):
         b1: float = 0.5,
         b2: float = 0.999,
         vanilla=True,
+        translation_penalty=0.1,
         **kwargs
     ):
         super().__init__()
@@ -95,6 +96,7 @@ class WGANGP(LightningModule):
         self.b1 = b1
         self.b2 = b2
         self.vanilla = vanilla
+        self.translation_penalty = translation_penalty
 
         # networks
         self.generator = Generator(
@@ -227,7 +229,7 @@ class WGANGP(LightningModule):
             if self.vanilla:
                 g_loss = self.adversarial_loss(self.discriminator(self(z)), valid)
             else:
-                g_loss = self.adversarial_loss(self.discriminator(self(z)), valid) + 0.1 * nn.L1Loss()(z, self.generated_imgs)
+                g_loss = self.adversarial_loss(self.discriminator(self(z)), valid) + self.translation_penalty * nn.L1Loss()(z, self.generated_imgs)
             tqdm_dict = {"g_loss": g_loss}
             output = OrderedDict(
                 {"loss": g_loss, "progress_bar": tqdm_dict, "log": tqdm_dict}

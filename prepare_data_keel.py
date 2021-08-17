@@ -36,12 +36,23 @@ def dats_to_torch(f, type_ds):
     )
 
 
+# for ds_path in Path("datasets_keel").iterdir():
+#     if "abalone" in ds_path.name:
+#         for f in ds_path.iterdir():
+#             if "dat" in f.suffix:
+#                 if "1tra" in f.name:
+#                     dats_to_torch(f, "train")
+#                 if "1tst" in f.name:
+#                     dats_to_torch(f, "test")
+
+
 for ds_path in Path("datasets_keel").iterdir():
-    if "abalone" in ds_path.name:
-        for f in ds_path.iterdir():
-            if "dat" in f.suffix:
-                if "1tra" in f.name:
-                    dats_to_torch(f, "train")
-                if "1tst" in f.name:
-                    dats_to_torch(f, "test")
+    x_train_all, y_train_all, _, _, _, _ = torch.load(ds_path / "ds_train.pt")
+    perm = torch.randperm(x_train_all.size()[0])
+    x_train_all, y_train_all = x_train_all[perm], y_train_all[perm]
+    train_size = int(0.8 * len(x_train_all))
+    x_train, y_train = x_train_all[:train_size], y_train_all[:train_size]
+    x_test, y_test = x_train_all[train_size:], y_train_all[train_size:]
+    torch.save([x_train, y_train], ds_path / 'x_train_train.pt')
+    torch.save([x_test, y_test], ds_path / 'x_train_val.pt')
 
