@@ -40,7 +40,11 @@ def objective(trial: optuna.Trial, ds_path):
         "translation_penalty", [0.05, 0.08, 0.1, 0.12, 0.15]
     )
     extra_min_weight = trial.suggest_categorical("extra_min_weight", [0])
-    gen_pts_kept = trial.suggest_categorical("gen_pts_kept", [0.5, 1, 2, 3, 8])
+    gen_pts_kept = trial.suggest_categorical("gen_pts_kept", [0.5, 1, 2, 4, 8])
+    # min_nn_prob = trial.suggest_float(
+    #     "min_nn_prob", low=0.2, high=0.8, step=0.2
+    # )
+    max_nn_prob = trial.suggest_float("max_nn_prob", low=0.6, high=1, step=0.2)
     # x_train_all, y_train_all, _, _, _, _ = torch.load(ds_path / "ds_train.pt")
     x_train, y_train = torch.load(ds_path / "x_train_train.pt")
     x_maj = x_train[y_train == 0]
@@ -74,16 +78,21 @@ def objective(trial: optuna.Trial, ds_path):
     # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach()
     # x_gen = model(torch.randn(5*x_min.shape[0], x_min.shape[1]).cuda()).cpu().detach()
     x_gen = model(x_maj.float().cuda()).cpu().detach()
+    probas = neigh.predict_proba(x_gen)[:, 1]
+    # x_gen = x_gen[(probas >= min_nn_prob) & (probas <= max_nn_prob)]
+    x_gen = x_gen[(probas >= 0.2) & (probas <= max_nn_prob)]
     print("generated synthetic points")
     # x_gen = x_gen[neigh_res==1]
     x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    x_gen = x_gen[: int(gen_pts_kept * x_min.shape[0])]
     # torch.save(x_gen, ds_path / "x_gen.pt")
     print("predicted nn on synthetic points")
     # print(x_gen.shape)
 
     # x_gen = torch.load(ds_path / "x_gen.pt")
     # Adjust the number of points generated
-    x_gen = x_gen[: int(gen_pts_kept * x_min.shape[0])]
+    if x_gen.shape[0] == 0:
+        raise optuna.TrialPruned()
 
     # print(x_gen.shape)
     # x_all = x_train
@@ -131,59 +140,64 @@ if __name__ == "__main__":
             continue
         # if (ds_path / "study.pkl").exists():
         #     continue
-        study = optuna.create_study(direction="maximize")
-        study.optimize(lambda trial: objective(trial, ds_path), n_trials=45)
-        joblib.dump(study, ds_path / "study.pkl")
-        # study = joblib.load(ds_path / "study.pkl")
-        # best_params = study.best_params
-        # x_train, y_train, _, _, _, _ = torch.load(ds_path / "ds_train.pt")
-        # x_maj = x_train[y_train == 0]
-        # x_min = x_train[y_train == 1]
-        # x_test, y_test, _, _, _, _ = torch.load(ds_path / "ds_test.pt")
-        # neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
-        # neigh.fit(x_train, y_train)
-        # gan_model_path = Path(ds_path / "ttgan_maj_optuna_best.ckpt")
-        # if not gan_model_path.exists():
-        #     ds = TensorDataset(x_min.float())
-        #     model = WGANGP(
-        #         latent_dim=x_train.shape[1],
-        #         output_dim=x_train.shape[1],
-        #         lr=1e-4,
-        #         x_maj=x_maj,
-        #         vanilla=False,
-        #         translation_penalty=best_params["translation_penalty"],
-        #     )
-        #     trainer = Trainer(gpus=1, max_epochs=3000)
-        #     trainer.fit(model, DataLoader(ds, batch_size=100024))
-        #     trainer.save_checkpoint(gan_model_path)
-        # model = WGANGP.load_from_checkpoint(
-        #     gan_model_path, strict=False
-        # ).cuda()
-        # x_gen = model(x_maj.float().cuda()).cpu().detach()
-        # x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
-        # x_gen = x_gen[: int(best_params["gen_pts_kept"] * x_min.shape[0])]
-        # x_all = torch.cat(
-        #     [x_train] + best_params["extra_min_weight"] * [x_min] + [x_gen]
-        # )
-        # y_all = torch.cat(
-        #     [y_train]
-        #     + best_params["extra_min_weight"] * [torch.ones(len(x_min))]
-        #     + [torch.ones(len(x_gen))]
-        # )
-        # x_all, y_all = x_all.float().numpy(), y_all.float().numpy()
-        # x_test, y_test = x_test.numpy(), y_test.numpy()
-        # clf = LinearSVC()
-        # clf = SVC(kernel="linear", probability=True)
-        # clf.fit(x_all, y_all)
-        # Path(ds_path / "optuna_ap.txt").write_text(
-        #     str(
-        #         average_precision_score(
-        #             y_test, clf.predict_proba(x_test)[:, 1]
-        #         )
-        #     )
-        # )
-        # Path(ds_path / "optuna_best_params.txt").write_text(
-        #     str(
-        #         best_params
-        #     )
-        # )
+        # study = optuna.create_study(direction="maximize")
+        # study.optimize(lambda trial: objective(trial, ds_path), n_trials=96)
+        # joblib.dump(study, ds_path / "study.pkl")
+        study = joblib.load(ds_path / "study.pkl")
+        best_params = study.best_params
+        x_train, y_train, _, _, _, _ = torch.load(ds_path / "ds_train.pt")
+        x_maj = x_train[y_train == 0]
+        x_min = x_train[y_train == 1]
+        x_test, y_test, _, _, _, _ = torch.load(ds_path / "ds_test.pt")
+        neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
+        neigh.fit(x_train, y_train)
+        gan_model_path = Path(ds_path / "ttgan_maj_optuna_best.ckpt")
+        if not gan_model_path.exists():
+            ds = TensorDataset(x_min.float())
+            model = WGANGP(
+                latent_dim=x_train.shape[1],
+                output_dim=x_train.shape[1],
+                lr=1e-4,
+                x_maj=x_maj,
+                vanilla=False,
+                translation_penalty=best_params["translation_penalty"],
+            )
+            trainer = Trainer(gpus=1, max_epochs=3000)
+            trainer.fit(model, DataLoader(ds, batch_size=100024))
+            trainer.save_checkpoint(gan_model_path)
+        model = WGANGP.load_from_checkpoint(
+            gan_model_path, strict=False
+        ).cuda()
+        x_gen = model(x_maj.float().cuda()).cpu().detach()
+        probas = neigh.predict_proba(x_gen)[:, 1]
+        x_gen = x_gen[
+            (probas >= 0.2)
+            & (probas <= best_params["max_nn_prob"])
+        ]
+        x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+        x_gen = x_gen[: int(best_params["gen_pts_kept"] * x_min.shape[0])]
+        x_all = torch.cat(
+            [x_train] + best_params["extra_min_weight"] * [x_min] + [x_gen]
+        )
+        y_all = torch.cat(
+            [y_train]
+            + best_params["extra_min_weight"] * [torch.ones(len(x_min))]
+            + [torch.ones(len(x_gen))]
+        )
+        x_all, y_all = x_all.float().numpy(), y_all.float().numpy()
+        x_test, y_test = x_test.numpy(), y_test.numpy()
+        clf = LinearSVC()
+        clf = SVC(kernel="linear", probability=True)
+        clf.fit(x_all, y_all)
+        Path(ds_path / "optuna_ap.txt").write_text(
+            str(
+                average_precision_score(
+                    y_test, clf.predict_proba(x_test)[:, 1]
+                )
+            )
+        )
+        Path(ds_path / "optuna_best_params.txt").write_text(
+            str(best_params)
+            + " number of synth points: {}".format(x_gen.shape[0])
+        )
+
