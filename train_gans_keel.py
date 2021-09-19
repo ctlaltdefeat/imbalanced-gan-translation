@@ -35,12 +35,12 @@ if __name__ == "__main__":
             cyclic_loss=10,
             identity_loss=5,
         )
-        # model.load_from_checkpoint(
-        #     r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\datasets_other\celeba\test_cyclic.ckpt",
-        #     strict=False,
-        # )
+        model.load_from_checkpoint(
+            r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\datasets_other\celeba\test_cyclic.ckpt",
+            strict=False,
+        )
         trainer = Trainer(
-            gpus=1, max_epochs=1000, multiple_trainloader_mode="min_size"
+            gpus=1, max_epochs=2000, multiple_trainloader_mode="min_size"
         )
         trainer.fit(
             model,
@@ -49,4 +49,4 @@ if __name__ == "__main__":
                 "maj": DataLoader(ds_maj, batch_size=3000, shuffle=True),
             },
         )
-        trainer.save_checkpoint(ds_path / "test_cyclic.ckpt")
+        trainer.save_checkpoint(ds_path / "just_cyclic.ckpt")

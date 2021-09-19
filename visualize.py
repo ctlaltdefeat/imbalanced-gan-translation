@@ -7,7 +7,7 @@ import umap
 reducer = umap.UMAP()
 x, y, x_maj, y_maj, x_min, y_min = torch.load(r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\datasets_other\celeba\ds_train.pt")
 model = WGANGP.load_from_checkpoint(
-    r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\datasets_other\celeba\test_cyclic.ckpt",
+    r"C:\Users\Jonathan\PycharmProjects\imbalanced-gan-translation\datasets_other\celeba\just_cyclic.ckpt",
     strict=False,
 )
 # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach().numpy()
