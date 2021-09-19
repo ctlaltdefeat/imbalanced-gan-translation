@@ -46,7 +46,7 @@ def dats_to_torch(f, type_ds):
 #                     dats_to_torch(f, "test")
 
 
-for ds_path in Path("datasets_keel").iterdir():
+for ds_path in Path("datasets_other").iterdir():
     x_train_all, y_train_all, _, _, _, _ = torch.load(ds_path / "ds_train.pt")
     perm = torch.randperm(x_train_all.size()[0])
     x_train_all, y_train_all = x_train_all[perm], y_train_all[perm]

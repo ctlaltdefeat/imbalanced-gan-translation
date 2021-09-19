@@ -1,5 +1,6 @@
 # from argparse import ArgumentParser, Namespace
 from collections import OrderedDict
+import itertools
 
 import numpy as np
 import torch
@@ -85,10 +86,12 @@ class WGANGP(LightningModule):
         b2: float = 0.999,
         vanilla=True,
         translation_penalty=0.1,
+        cyclic_loss=0,
+        identity_loss=0,
         **kwargs
     ):
         super().__init__()
-        self.save_hyperparameters(ignore='x_maj')
+        self.save_hyperparameters(ignore="x_maj")
 
         self.latent_dim = latent_dim
         self.output_dim = output_dim
@@ -97,6 +100,8 @@ class WGANGP(LightningModule):
         self.b2 = b2
         self.vanilla = vanilla
         self.translation_penalty = translation_penalty
+        self.cyclic_loss = cyclic_loss
+        self.identity_loss = identity_loss
 
         # networks
         self.generator = Generator(
@@ -104,10 +109,16 @@ class WGANGP(LightningModule):
         )
         self.discriminator = Discriminator(output_dim=self.output_dim)
 
+        if self.cyclic_loss:
+            self.gen2 = Generator(
+                latent_dim=self.latent_dim, output_dim=self.output_dim
+            )
+            self.disc2 = Discriminator(output_dim=self.output_dim)
+
         self.example_input_array = torch.zeros(2, self.latent_dim)
 
-        if 'x_maj' in kwargs and kwargs['x_maj'] is not None:
-            self.register_buffer('x_maj', kwargs['x_maj'])
+        if "x_maj" in kwargs and kwargs["x_maj"] is not None:
+            self.register_buffer("x_maj", kwargs["x_maj"])
 
     def forward(self, z):
         return self.generator(z)
@@ -115,33 +126,33 @@ class WGANGP(LightningModule):
     def adversarial_loss(self, y_hat, y):
         return F.binary_cross_entropy(y_hat, y)
 
-    def compute_gradient_penalty(self, real_samples, fake_samples):
-        """Calculates the gradient penalty loss for WGAN GP"""
-        # Random weight term for interpolation between real and fake samples
-        alpha = torch.Tensor(np.random.random((real_samples.size(0), 1))).to(
-            self.device
-        )
-        # Get random interpolation between real and fake samples
-        interpolates = (
-            alpha * real_samples + ((1 - alpha) * fake_samples)
-        ).requires_grad_(True)
-        interpolates = interpolates.to(self.device)
-        d_interpolates = self.discriminator(interpolates)
-        fake = (
-            torch.Tensor(real_samples.shape[0], 1).fill_(1.0).to(self.device)
-        )
-        # Get gradient w.r.t. interpolates
-        gradients = torch.autograd.grad(
-            outputs=d_interpolates,
-            inputs=interpolates,
-            grad_outputs=fake,
-            create_graph=True,
-            retain_graph=True,
-            only_inputs=True,
-        )[0]
-        gradients = gradients.view(gradients.size(0), -1).to(self.device)
-        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
-        return gradient_penalty
+    # def compute_gradient_penalty(self, real_samples, fake_samples):
+    #     """Calculates the gradient penalty loss for WGAN GP"""
+    #     # Random weight term for interpolation between real and fake samples
+    #     alpha = torch.Tensor(np.random.random((real_samples.size(0), 1))).to(
+    #         self.device
+    #     )
+    #     # Get random interpolation between real and fake samples
+    #     interpolates = (
+    #         alpha * real_samples + ((1 - alpha) * fake_samples)
+    #     ).requires_grad_(True)
+    #     interpolates = interpolates.to(self.device)
+    #     d_interpolates = self.discriminator(interpolates)
+    #     fake = (
+    #         torch.Tensor(real_samples.shape[0], 1).fill_(1.0).to(self.device)
+    #     )
+    #     # Get gradient w.r.t. interpolates
+    #     gradients = torch.autograd.grad(
+    #         outputs=d_interpolates,
+    #         inputs=interpolates,
+    #         grad_outputs=fake,
+    #         create_graph=True,
+    #         retain_graph=True,
+    #         only_inputs=True,
+    #     )[0]
+    #     gradients = gradients.view(gradients.size(0), -1).to(self.device)
+    #     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+    #     return gradient_penalty
 
     # def training_step(self, batch, batch_idx, optimizer_idx):
     #     imgs = batch[0]
@@ -203,33 +214,70 @@ class WGANGP(LightningModule):
     #         return output
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        imgs = batch[0]
+        if self.cyclic_loss:
+            imgs = batch["min"][0]
+            imgs2 = batch["maj"][0]
+        else:
+            imgs = batch[0]
 
         # sample noise
         # z = torch.randn(imgs.shape[0], self.latent_dim)
         # z = (torch.rand(imgs.shape[0], self.latent_dim)-0.5)*2*3
         if self.vanilla:
-            z = torch.randn(imgs.shape[0], self.latent_dim)
+            if not self.cyclic_loss:
+                z = torch.randn(imgs.shape[0], self.latent_dim)
+            if self.cyclic_loss:
+                z = imgs2
+                z2 = imgs
         else:
-            z = self.x_maj[torch.randint(len(self.x_maj), (imgs.shape[0],))]
+            if not self.cyclic_loss:
+                z = self.x_maj[
+                    torch.randint(len(self.x_maj), (imgs.shape[0],))
+                ]
+            if self.cyclic_loss:
+                z = imgs2
+                z2 = imgs
         z = z.type_as(imgs)
+        if self.cyclic_loss:
+            z2 = z2.type_as(imgs2)
 
         # train generator
         if optimizer_idx == 0:
 
             # generate images
-            self.generated_imgs = self(z)
+            generated_imgs = self(z)
 
             # ground truth result (ie: all fake)
             # put on GPU because we created this tensor inside training_loop
-            valid = torch.ones(imgs.size(0), 1)
-            valid = valid.type_as(imgs)
+            valid = torch.ones(z.size(0), 1)
+            valid = valid.type_as(z)
 
             # adversarial loss is binary cross-entropy
             if self.vanilla:
-                g_loss = self.adversarial_loss(self.discriminator(self(z)), valid)
+                g_loss = self.adversarial_loss(
+                    self.discriminator(generated_imgs), valid
+                )
             else:
-                g_loss = self.adversarial_loss(self.discriminator(self(z)), valid) + self.translation_penalty * nn.L1Loss()(z, self.generated_imgs)
+                g_loss = self.adversarial_loss(
+                    self.discriminator(generated_imgs), valid
+                ) + self.translation_penalty * nn.L1Loss()(z, generated_imgs)
+
+            if self.cyclic_loss:
+                generated_imgs2 = self.gen2(z2)
+                valid = torch.ones(imgs.size(0), 1)
+                valid = valid.type_as(imgs)
+                g_loss += self.adversarial_loss(
+                    self.disc2(generated_imgs2), valid
+                )
+                cycle_loss = F.l1_loss(
+                    self.gen2(generated_imgs), z
+                ) + F.l1_loss(self(generated_imgs2), z2)
+                g_loss += self.cyclic_loss * cycle_loss
+            if self.identity_loss:
+                id_loss = F.l1_loss(self.gen2(z), z)
+                if self.cyclic_loss:
+                    id_loss += F.l1_loss(self(z2), z2)
+                g_loss += self.identity_loss * id_loss
             tqdm_dict = {"g_loss": g_loss}
             output = OrderedDict(
                 {"loss": g_loss, "progress_bar": tqdm_dict, "log": tqdm_dict}
@@ -247,8 +295,8 @@ class WGANGP(LightningModule):
             real_loss = self.adversarial_loss(self.discriminator(imgs), valid)
 
             # how well can it label as fake?
-            fake = torch.zeros(imgs.size(0), 1)
-            fake = fake.type_as(imgs)
+            fake = torch.zeros(z.size(0), 1)
+            fake = fake.type_as(z)
 
             fake_loss = self.adversarial_loss(
                 self.discriminator(self(z).detach()), fake
@@ -256,6 +304,22 @@ class WGANGP(LightningModule):
 
             # discriminator loss is the average of these
             d_loss = (real_loss + fake_loss) / 2
+
+            if self.cyclic_loss:
+                valid = torch.ones(imgs2.size(0), 1)
+                valid = valid.type_as(imgs2)
+
+                real_loss = self.adversarial_loss(self.disc2(imgs2), valid)
+
+                # how well can it label as fake?
+                fake = torch.zeros(imgs.size(0), 1)
+                fake = fake.type_as(imgs)
+
+                fake_loss = self.adversarial_loss(
+                    self.disc2(self.gen2(z2).detach()), fake
+                )
+                d_loss += (real_loss + fake_loss) / 2
+
             tqdm_dict = {"d_loss": d_loss}
             output = OrderedDict(
                 {"loss": d_loss, "progress_bar": tqdm_dict, "log": tqdm_dict}
@@ -285,10 +349,26 @@ class WGANGP(LightningModule):
         b1 = self.b1
         b2 = self.b2
 
-        opt_g = torch.optim.Adam(
-            self.generator.parameters(), lr=lr, betas=(b1, b2)
-        )
-        opt_d = torch.optim.Adam(
-            self.discriminator.parameters(), lr=lr, betas=(b1, b2)
-        )
+        if self.cyclic_loss:
+            opt_g = torch.optim.Adam(
+                itertools.chain(
+                    self.generator.parameters(), self.gen2.parameters()
+                ),
+                lr=lr,
+                betas=(b1, b2),
+            )
+            opt_d = torch.optim.Adam(
+                itertools.chain(
+                    self.discriminator.parameters(), self.disc2.parameters()
+                ),
+                lr=lr,
+                betas=(b1, b2),
+            )
+        else:
+            opt_g = torch.optim.Adam(
+                self.generator.parameters(), lr=lr, betas=(b1, b2)
+            )
+            opt_d = torch.optim.Adam(
+                self.discriminator.parameters(), lr=lr, betas=(b1, b2)
+            )
         return [opt_g, opt_d], []

@@ -35,7 +35,7 @@ import joblib
 
 
 def objective(trial: optuna.Trial, ds_path):
-    epochs = 3000
+    epochs = 2000
     translation_penalty = trial.suggest_categorical(
         "translation_penalty", [0.05, 0.08, 0.1, 0.12, 0.15]
     )
@@ -44,15 +44,17 @@ def objective(trial: optuna.Trial, ds_path):
     # min_nn_prob = trial.suggest_float(
     #     "min_nn_prob", low=0.2, high=0.8, step=0.2
     # )
-    max_nn_prob = trial.suggest_float("max_nn_prob", low=0.6, high=1, step=0.2)
+    max_nn_prob = trial.suggest_float(
+        "max_nn_prob", low=0.6, high=1, step=0.1
+    )
     # x_train_all, y_train_all, _, _, _, _ = torch.load(ds_path / "ds_train.pt")
     x_train, y_train = torch.load(ds_path / "x_train_train.pt")
     x_maj = x_train[y_train == 0]
     x_min = x_train[y_train == 1]
     x_test, y_test = torch.load(ds_path / "x_train_val.pt")
     # x_test, y_test, _, _, _, _ = torch.load(ds_path / "ds_test.pt")
-    neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
-    neigh.fit(x_train, y_train)
+    # neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
+    # neigh.fit(x_train, y_train)
 
     gan_model_path = Path(
         ds_path
@@ -78,12 +80,28 @@ def objective(trial: optuna.Trial, ds_path):
     # x_gen = model(torch.Tensor([4, 4]).unsqueeze(0)).detach()
     # x_gen = model(torch.randn(5*x_min.shape[0], x_min.shape[1]).cuda()).cpu().detach()
     x_gen = model(x_maj.float().cuda()).cpu().detach()
-    probas = neigh.predict_proba(x_gen)[:, 1]
+    # clf_h = LinearSVC()
+    # clf_h = SVC(kernel="rbf", probability=True)
+    # clf_h.fit(x_train, y_train)
+    cb = CatBoostClassifier(
+        custom_loss=['F1'],
+        random_seed=123,
+        learning_rate=0.2,
+        iterations=100,
+        depth=6
+    )
+    cb.fit(x_train.numpy(), y_train.numpy())
+    probas = cb.predict_proba(x_gen.numpy())[:, 1]
+    # probas = clf_h.predict_proba(x_gen)[:, 1]
+    # probas = neigh.predict_proba(x_gen)[:, 1]
     # x_gen = x_gen[(probas >= min_nn_prob) & (probas <= max_nn_prob)]
-    x_gen = x_gen[(probas >= 0.2) & (probas <= max_nn_prob)]
+    x_gen = x_gen[(probas >= 0.05) & (probas <= max_nn_prob)]
+    if x_gen.shape[0] == 0:
+        raise optuna.TrialPruned()
     print("generated synthetic points")
     # x_gen = x_gen[neigh_res==1]
-    x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    # x_gen = x_gen[clf_h.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
+    x_gen = x_gen[cb.predict_proba(x_gen.numpy())[:, 1].argsort()[::-1].copy()]
     x_gen = x_gen[: int(gen_pts_kept * x_min.shape[0])]
     # torch.save(x_gen, ds_path / "x_gen.pt")
     print("predicted nn on synthetic points")
@@ -109,10 +127,19 @@ def objective(trial: optuna.Trial, ds_path):
 
     x_all, y_all = x_all.float().numpy(), y_all.float().numpy()
     x_test, y_test = x_test.numpy(), y_test.numpy()
-    clf = LinearSVC()
-    clf = SVC(kernel="linear", probability=True)
-    clf.fit(x_all, y_all)
-    return average_precision_score(y_test, clf.predict_proba(x_test)[:, 1])
+    # clf = LinearSVC()
+    # clf = SVC(kernel="rbf", probability=True)
+    # clf.fit(x_all, y_all)
+    cb = CatBoostClassifier(
+        custom_loss=['F1'],
+        random_seed=123,
+        learning_rate=0.2,
+        iterations=100,
+        depth=6
+    )
+    cb.fit(x_all, y_all)
+    return average_precision_score(y_test, cb.predict_proba(x_test)[:, 1])
+    # return average_precision_score(y_test, clf.predict_proba(x_test)[:, 1])
     # trainer.save_checkpoint(
     #     "saved_experiments/gan_vanilla_keep_5_4/celeba_balanced.ckpt"
     # )
@@ -127,7 +154,7 @@ def objective(trial: optuna.Trial, ds_path):
 
 if __name__ == "__main__":
     seed_everything(123, workers=True)
-    for ds_path in Path("datasets_keel").iterdir():
+    for ds_path in Path("datasets_other").iterdir():
         # if "abalone" in ds_path.name:
         #     continue
         if "ecoli" in ds_path.name:
@@ -141,16 +168,20 @@ if __name__ == "__main__":
         # if (ds_path / "study.pkl").exists():
         #     continue
         # study = optuna.create_study(direction="maximize")
-        # study.optimize(lambda trial: objective(trial, ds_path), n_trials=96)
+        # study.optimize(lambda trial: objective(trial, ds_path), n_trials=125)
         # joblib.dump(study, ds_path / "study.pkl")
-        study = joblib.load(ds_path / "study.pkl")
-        best_params = study.best_params
+        # study = joblib.load(ds_path / "study.pkl")
+        # try:
+        #     best_params = study.best_params
+        # except Exception as e:
+        #     print("{}: {}".format(ds_path.name, e))
+        #     continue
         x_train, y_train, _, _, _, _ = torch.load(ds_path / "ds_train.pt")
         x_maj = x_train[y_train == 0]
         x_min = x_train[y_train == 1]
         x_test, y_test, _, _, _, _ = torch.load(ds_path / "ds_test.pt")
-        neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
-        neigh.fit(x_train, y_train)
+        # neigh = KNeighborsClassifier(n_neighbors=5, n_jobs=3)
+        # neigh.fit(x_train, y_train)
         gan_model_path = Path(ds_path / "ttgan_maj_optuna_best.ckpt")
         if not gan_model_path.exists():
             ds = TensorDataset(x_min.float())
@@ -160,44 +191,80 @@ if __name__ == "__main__":
                 lr=1e-4,
                 x_maj=x_maj,
                 vanilla=False,
-                translation_penalty=best_params["translation_penalty"],
+                translation_penalty=0.12,
             )
-            trainer = Trainer(gpus=1, max_epochs=3000)
+            trainer = Trainer(gpus=1, max_epochs=2000)
             trainer.fit(model, DataLoader(ds, batch_size=100024))
             trainer.save_checkpoint(gan_model_path)
         model = WGANGP.load_from_checkpoint(
             gan_model_path, strict=False
         ).cuda()
         x_gen = model(x_maj.float().cuda()).cpu().detach()
-        probas = neigh.predict_proba(x_gen)[:, 1]
-        x_gen = x_gen[
-            (probas >= 0.2)
-            & (probas <= best_params["max_nn_prob"])
-        ]
-        x_gen = x_gen[neigh.predict_proba(x_gen)[:, 1].argsort()[::-1].copy()]
-        x_gen = x_gen[: int(best_params["gen_pts_kept"] * x_min.shape[0])]
+        # clf_h = LinearSVC()
+        # clf_h = SVC(kernel="rbf", probability=True)
+        # clf_h.fit(x_train, y_train)
+        # probas = clf_h.predict_proba(x_gen)[:, 1]
+        # probas = neigh.predict_proba(x_gen)[:, 1]
+        cb = CatBoostClassifier(
+            custom_loss=['F1'],
+            random_seed=123,
+            learning_rate=0.2,
+            iterations=100,
+            depth=6
+        )
+        cb.fit(x_train.numpy(), y_train.numpy())
+        probas = cb.predict_proba(x_gen.numpy())[:, 1]
+        # x_gen = x_gen[(probas >= best_params["min_nn_prob"]) & (probas <= best_params["max_nn_prob"])]
+        x_gen = x_gen[(probas >= 0.05) & (probas <= 0.7)]
+        if x_gen.shape[0]>0:
+            x_gen = x_gen[cb.predict_proba(x_gen.numpy())[:, 1].argsort()[::-1].copy()]
+            x_gen = x_gen[: int(4 * x_min.shape[0])]
         x_all = torch.cat(
-            [x_train] + best_params["extra_min_weight"] * [x_min] + [x_gen]
+            [x_train] + 0 * [x_min] + [x_gen]
         )
         y_all = torch.cat(
             [y_train]
-            + best_params["extra_min_weight"] * [torch.ones(len(x_min))]
+            + 0 * [torch.ones(len(x_min))]
             + [torch.ones(len(x_gen))]
         )
         x_all, y_all = x_all.float().numpy(), y_all.float().numpy()
         x_test, y_test = x_test.numpy(), y_test.numpy()
-        clf = LinearSVC()
-        clf = SVC(kernel="linear", probability=True)
-        clf.fit(x_all, y_all)
+        # clf = LinearSVC()
+        # clf = SVC(kernel="rbf", probability=True)
+        # clf.fit(x_all, y_all)
+        cb = CatBoostClassifier(
+            custom_loss=['F1'],
+            random_seed=123,
+            learning_rate=0.2,
+            iterations=200,
+            depth=6
+        )
+        cb.fit(x_all, y_all)
         Path(ds_path / "optuna_ap.txt").write_text(
             str(
                 average_precision_score(
-                    y_test, clf.predict_proba(x_test)[:, 1]
+                    y_test, cb.predict_proba(x_test)[:, 1]
                 )
             )
         )
         Path(ds_path / "optuna_best_params.txt").write_text(
-            str(best_params)
+            str('asd')
             + " number of synth points: {}".format(x_gen.shape[0])
+        )
+
+        cb = CatBoostClassifier(
+            custom_loss=['F1'],
+            random_seed=123,
+            learning_rate=0.2,
+            iterations=200,
+            depth=6
+        )
+        cb.fit(x_train.numpy(), y_train.numpy())
+        Path(ds_path / "catboost_ap.txt").write_text(
+            str(
+                average_precision_score(
+                    y_test, cb.predict_proba(x_test)[:, 1]
+                )
+            )
         )
 
